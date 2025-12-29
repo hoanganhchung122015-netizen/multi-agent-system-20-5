@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     
     // Dùng bản Pro để đọc ảnh chính xác và ổn định hơn bản Flash
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash" });
 
     const parts: any[] = [{ text: prompt }];
     
@@ -34,3 +34,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ text: "AI đang bận hoặc ảnh chưa rõ. Bạn thử lại nhé!" });
   }
 }
+
