@@ -9,8 +9,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ text: "Lỗi: Chưa cấu hình API Key trên Vercel!" }, { status: 500 });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
+const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     // Cấu trúc contents để gửi cả Text và Ảnh (nếu có)
     const parts: any[] = [{ text: `${prompt} môn ${subject}` }];
     
@@ -48,3 +47,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ text: 'Lỗi hệ thống khi gọi Gemini' }, { status: 500 });
   }
 }
+
