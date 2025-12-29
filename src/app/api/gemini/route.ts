@@ -9,10 +9,12 @@ export async function POST(req: Request) {
     if (!apiKey) return NextResponse.json({ text: "Lỗi: Thiếu Key trên Vercel" }, { status: 500 });
 
     const genAI = new GoogleGenerativeAI(apiKey);
+  
+// Trong file route.ts
+const model = genAI.getGenerativeModel({ 
+  model: "gemini-3-flash" // Đổi thành gemini-3-flash để khớp với tài khoản của bạn
+});
     
-    // Dùng bản Pro để đọc ảnh chính xác và ổn định hơn bản Flash
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash" });
-
     const parts: any[] = [{ text: prompt }];
     
     if (image) {
@@ -34,4 +36,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ text: "AI đang bận hoặc ảnh chưa rõ. Bạn thử lại nhé!" });
   }
 }
+
 
