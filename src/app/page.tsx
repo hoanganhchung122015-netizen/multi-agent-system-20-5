@@ -211,7 +211,7 @@ export default function StudyApp() {
             </div>
 
             <button onClick={sendToAI} disabled={!croppedImage && !transcript} className="mt-6 w-full bg-indigo-600 text-white py-5 rounded-3xl font-black shadow-2xl active:scale-95 transition-all disabled:bg-slate-200 disabled:shadow-none uppercase tracking-widest">
-              Gửi đề cho Gemini 🚀
+              Gửi đề cho chuyên gia 🚀
             </button>
           </div>
         )}
@@ -242,5 +242,6 @@ export default function StudyApp() {
     </main>
   );
 }
+
 
 
