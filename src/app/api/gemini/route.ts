@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   
 // Trong file route.ts
 const model = genAI.getGenerativeModel({ 
-  model: "gemini-3-flash" // Đổi thành gemini-3-flash để khớp với tài khoản của bạn
+  model: "Gemini 2.5 Flash" // Đổi thành gemini-3-flash để khớp với tài khoản của bạn
 });
     
     const parts: any[] = [{ text: prompt }];
@@ -36,5 +36,6 @@ const model = genAI.getGenerativeModel({
     return NextResponse.json({ text: "AI đang bận hoặc ảnh chưa rõ. Bạn thử lại nhé!" });
   }
 }
+
 
 
