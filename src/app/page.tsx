@@ -157,7 +157,7 @@ export default function StudyApp() {
         {step === 1 && (
           <div className="p-6">
             <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-8 text-white mb-8 shadow-xl">
-              <h1 className="text-3xl font-black italic mb-1">GEMINI STUDY</h1>
+              <h1 className="text-3xl font-black italic mb-1">MULTI-AGEN-SYSTEM 20.5</h1>
               <p className="opacity-80 text-sm">Trợ lý giải bài tập AI hoàn hảo</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -242,3 +242,4 @@ export default function StudyApp() {
     </main>
   );
 }
+
