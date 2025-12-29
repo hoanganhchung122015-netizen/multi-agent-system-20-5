@@ -1,15 +1,25 @@
-import { GoogleGenerativeAI } from "@google/generativeai";
-
-
+import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
-  const { prompt, image, subject } = await req.json();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");    
-  const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
-    systemInstruction: `Bạn là chuyên gia ${subject}. Giải bài theo 3 chế độ: 1. Đáp án+CASIO, 2. Gia sư AI ngắn gọn, 3. Luyện Skill (2 câu trắc nghiệm). Trả về văn bản sạch, dùng LaTeX cho công thức.`
-  });
+  const { prompt } = await req.json();
+  const apiKey = process.env.GEMINI_API_KEY; // Lấy từ Environment Variables đã cài trên Vercel
 
-  const result = await model.generateContent(image ? [prompt, { inlineData: { data: image, mimeType: "image/jpeg" } }] : prompt);
-  return Response.json({ text: result.response.text() });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      }),
+    });
+
+    const data = await response.json();
+    const result = data.candidates[0].content.parts[0].text;
+    
+    return NextResponse.json({ text: result });
+  } catch (error) {
+    return NextResponse.json({ error: 'Lỗi gọi API Gemini' }, { status: 500 });
+  }
 }
