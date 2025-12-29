@@ -158,7 +158,7 @@ export default function StudyApp() {
           <div className="p-6">
             <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-8 text-white mb-8 shadow-xl">
               <h1 className="text-3xl font-black italic mb-1">MULTI-AGEN-SYSTEM 20.5</h1>
-              <p className="opacity-80 text-sm">Trợ lý giải bài tập AI hoàn hảo</p>
+              <p className="opacity-80 text-sm">Gia sư AI hoàn hảo của mọi thế hệ học sinh</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <button onClick={() => { setSubject("TOÁN"); setStep(2); }} className="h-40 bg-rose-500 text-white font-bold rounded-3xl shadow-lg text-xl active:scale-95 transition-all">TOÁN</button>
@@ -242,4 +242,5 @@ export default function StudyApp() {
     </main>
   );
 }
+
 
