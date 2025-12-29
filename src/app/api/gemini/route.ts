@@ -5,15 +5,13 @@ export async function POST(req: Request) {
     const { prompt, image, subject } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
-      return NextResponse.json({ text: "Lỗi: Chưa cấu hình API Key trên Vercel!" }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ text: "Thiếu API Key" }, { status: 500 });
 
-const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    // Cấu trúc contents để gửi cả Text và Ảnh (nếu có)
-    const parts: any[] = [{ text: `${prompt} môn ${subject}` }];
+    // Sử dụng v1beta với model gemini-1.5-flash-latest
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+
+    const parts: any[] = [{ text: `Môn học: ${subject}. Yêu cầu: ${prompt}` }];
     
-    // Nếu có ảnh (định dạng base64), thêm vào phần gửi đi
     if (image) {
       parts.push({
         inlineData: {
@@ -27,24 +25,31 @@ const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flas
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: parts }]
+        contents: [{ parts: parts }],
+        // Tắt bớt bộ lọc để tránh lỗi "vi phạm chính sách" nhầm lẫn
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+        ]
       }),
     });
 
     const data = await response.json();
 
-    // Kiểm tra an toàn xem dữ liệu trả về có đúng cấu trúc không
-    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-      const result = data.candidates[0].content.parts[0].text;
-      return NextResponse.json({ text: result });
-    } else {
-      console.error("Gemini Error Details:", data);
-      return NextResponse.json({ text: "AI không trả về kết quả hợp lệ. Có thể ảnh quá mờ hoặc vi phạm chính sách." });
+    if (data.error) {
+      console.error("Chi tiết lỗi từ Google:", data.error);
+      return NextResponse.json({ text: `Lỗi Google: ${data.error.message}` });
     }
 
+    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      return NextResponse.json({ text: data.candidates[0].content.parts[0].text });
+    }
+
+    return NextResponse.json({ text: "AI không thể đọc được đề bài, hãy thử chụp rõ nét hơn." });
+
   } catch (error) {
-    console.error("API Route Error:", error);
-    return NextResponse.json({ text: 'Lỗi hệ thống khi gọi Gemini' }, { status: 500 });
+    return NextResponse.json({ text: 'Lỗi máy chủ.' }, { status: 500 });
   }
 }
-
