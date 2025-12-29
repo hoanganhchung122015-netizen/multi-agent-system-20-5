@@ -2,4 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Các CSS khác của bạn để ở dưới này */
+/* Xóa hết các dòng @import cũ nếu có */
+body {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
