@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gemini App",
-  description: "Created with Next.js",
+  title: "Gemini Study App",
+  description: "Giải bài tập cùng AI",
 };
 
 export default function RootLayout({
@@ -12,9 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      {/* Xóa class font lỗi ở thẻ body */}
-      <body>
+    <html lang="vi">
+      <body className="antialiased">
         {children}
       </body>
     </html>
