@@ -1,192 +1,190 @@
 "use client";
 import "./globals.css";
+import { useState, useCallback } from "react";
+import Cropper from "react-easy-crop"; // Thư viện cắt ảnh
 
 import { useState } from "react";
-
 export default function StudyApp() {
-  const [step, setStep] = useState(1); // 1: Home, 2: Input, 3: Result
-  const [subject, setSubject] = useState("");
+  const [step, setStep] = useState(1);
+  const [image, setImage] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState(""); // Lưu văn bản từ giọng nói
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState("");
-  const [expertView, setExpertView] = useState(1);
-  const [image, setImage] = useState<string | null>(null);
 
-  // 1. Xử lý Chụp ảnh/Tải ảnh
-  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = (reader.result as string).split(",")[1];
-        setImage(base64String);
-      };
-      reader.readAsDataURL(file);
-    }
+export default function StudyApp() {
+  const [image, setImage] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [showCropper, setShowCropper] = useState(false);
+  const [finalImage, setFinalImage] = useState<string | null>(null);
+  
+  // --- 1. XỬ LÝ GIỌNG NÓI ---
+  const startRecording = () => {
+    const recognition = new (window as any).webkitSpeechRecognition();
+    recognition.lang = 'vi-VN';
+    recognition.onresult = (event: any) => {
+      setTranscript(event.results[0][0].transcript);
+    };
+    recognition.start();
   };
 
-  // 2. Gửi dữ liệu tới API Backend
-  const handleSolve = async () => {
-    if (!image) {
-      alert("Vui lòng chụp ảnh hoặc tải ảnh đề bài lên trước nhé!");
-      return;
-    }
+  // --- 2. XỬ LÝ GỬI ĐỀ (Gộp cả 3 nguồn) ---
+  const handleSendRequest = async () => {
     setLoading(true);
     setStep(3);
     try {
       const res = await fetch("/api/gemini", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          subject, 
           image, 
-          prompt: `Bạn là một chuyên gia môn ${subject}. Hãy giải chi tiết đề bài trong ảnh này.` 
+          prompt: transcript || "Giải đề bài này", 
+          subject: "Tổng hợp" 
         }),
       });
       const data = await res.json();
-      setResponse(data.text || "AI không trả về nội dung. Hãy kiểm tra lại API Key.");
-    } catch (error) {
-      setResponse("Lỗi kết nối server. Hãy đảm bảo bạn đã cấu hình GEMINI_API_KEY trên Vercel.");
+      setResponse(data.text);
+    } catch (e) {
+      setResponse("Lỗi kết nối.");
     }
     setLoading(false);
   };
 
-  // 3. Đọc văn bản (TTS)
-  const speak = () => {
-    if (!response) return;
-    window.speechSynthesis.cancel(); // Dừng các giọng đọc đang chạy
-    const utterance = new SpeechSynthesisUtterance(response);
-    utterance.lang = "vi-VN";
-    window.speechSynthesis.speak(utterance);
-  };
-
   return (
-    <main className="max-w-md mx-auto min-h-screen bg-slate-50 p-6 font-sans border-x border-slate-200 shadow-2xl">
-      
-      {/* STEP 1: TRANG CHỦ (MENU 4 MÀU) */}
-      {step === 1 && (
-        <div className="flex flex-col h-full pt-10">
-          <h1 className="text-3xl font-black text-slate-800 text-center mb-10 leading-tight">
-            NHẬT KÝ <br/> <span className="text-indigo-600">TOÁN LÝ HÓA</span>
-          </h1>
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { name: "TOÁN", color: "bg-rose-500", shadow: "border-rose-700" },
-              { name: "LÝ", color: "bg-blue-500", shadow: "border-blue-700" },
-              { name: "HÓA", color: "bg-emerald-500", shadow: "border-emerald-700" },
-            ].map((s) => (
-              <button 
-                key={s.name} 
-                onClick={() => { setSubject(s.name); setStep(2); }}
-                className={`h-40 ${s.color} shadow-lg rounded-3xl text-2xl font-black text-white transition-all border-b-8 ${s.shadow} active:border-b-0 active:translate-y-1`}
-              >
-                {s.name}
-              </button>
-            ))}
-            <button className="h-40 bg-amber-400 shadow-lg rounded-3xl text-2xl font-black text-white border-b-8 border-amber-600 active:border-b-0 active:translate-y-1">
-              NHẬT KÝ
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 2: NHẬP LIỆU */}
+    <main className="max-w-md mx-auto min-h-screen bg-slate-50 p-6">
       {step === 2 && (
-        <div className="flex flex-col space-y-6 pt-4">
-          <button onClick={() => {setStep(1); setImage(null);}} className="text-slate-400 font-bold flex items-center gap-2 hover:text-slate-600">
-            ← QUAY LẠI
-          </button>
-          <h1 className="text-3xl font-black text-slate-800 text-center uppercase tracking-widest">
-            MÔN <span className="text-indigo-600">{subject}</span>
-          </h1>
+        <div className="space-y-6">
+          <h1 className="text-xl font-bold text-center">GỬI CÂU HỎI</h1>
           
           <div className="grid grid-cols-3 gap-3">
-            <label className="flex flex-col items-center justify-center p-5 bg-white rounded-2xl shadow-md cursor-pointer hover:bg-slate-50 border-2 border-transparent active:border-indigo-400 transition-all">
-              <span className="text-3xl">📸</span>
-              <span className="text-[10px] mt-2 font-black text-slate-500">CAMERA</span>
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImage} />
-            </label>
-            
-            <label className="flex flex-col items-center justify-center p-5 bg-white rounded-2xl shadow-md cursor-pointer hover:bg-slate-50 border-2 border-transparent active:border-indigo-400 transition-all">
-              <span className="text-3xl">📁</span>
-              <span className="text-[10px] mt-2 font-black text-slate-500">TẢI ẢNH</span>
-              <input type="file" accept="image/*" className="hidden" onChange={handleImage} />
+            {/* Chức năng 1: Chụp ảnh */}
+            <label className="flex flex-col items-center p-4 bg-white rounded-xl shadow cursor-pointer">
+              <span className="text-2xl">📸</span>
+              <span className="text-[10px] font-bold">CHỤP ẢNH</span>
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {/* Thêm logic crop ở đây */}} />
             </label>
 
-            <div className="flex flex-col items-center justify-center p-5 bg-slate-100 rounded-2xl opacity-50 cursor-not-allowed">
-              <span className="text-3xl">🎤</span>
-              <span className="text-[10px] mt-2 font-black text-slate-400">GIỌNG NÓI</span>
-            </div>
-          </div>
+            {/* Chức năng 2: Tải ảnh */}
+            <label className="flex flex-col items-center p-4 bg-white rounded-xl shadow cursor-pointer">
+              <span className="text-2xl">📁</span>
+              <span className="text-[10px] font-bold">TẢI LÊN</span>
+              <input type="file" accept="image/*" className="hidden" />
+            </label>
 
-          {image && (
-            <div className="bg-emerald-50 border-2 border-emerald-200 p-4 rounded-2xl flex items-center justify-center gap-2">
-              <span className="text-emerald-600 text-xl">✅</span>
-              <span className="text-emerald-700 font-bold text-sm">ĐÃ NHẬN ẢNH ĐỀ BÀI</span>
-            </div>
-          )}
-
-          <button 
-            onClick={handleSolve} 
-            disabled={loading || !image}
-            className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all flex items-center justify-center gap-3 ${
-              !image ? "bg-slate-300 cursor-not-allowed" : "bg-indigo-600 text-white active:scale-95 hover:bg-indigo-700"
-            }`}
-          >
-            {loading ? (
-              <>
-                <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                ĐANG GIẢI...
-              </>
-            ) : "GIẢI BÀI NGAY"}
-          </button>
-        </div>
-      )}
-
-      {/* STEP 3: KẾT QUẢ */}
-      {step === 3 && (
-        <div className="flex flex-col space-y-4 pt-4 pb-10">
-          <button onClick={() => {setStep(2); setResponse("");}} className="text-slate-400 font-bold flex items-center gap-2">
-            ← LÀM CÂU KHÁC
-          </button>
-          
-          <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1">
-            {[1, 2, 3].map((i) => (
-              <button key={i} onClick={() => setExpertView(i)}
-                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${expertView === i ? "bg-white shadow-md text-indigo-600" : "text-slate-500"}`}>
-                EXPERT {i}
-              </button>
-            ))}
-          </div>
-
-          <div className="bg-white p-6 rounded-[2rem] shadow-2xl min-h-[400px] relative border border-slate-100 overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-2 bg-indigo-600"></div>
-            <button 
-              onClick={speak} 
-              className="absolute top-6 right-6 w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center text-xl hover:bg-indigo-100 active:scale-90 transition-all shadow-sm"
-              title="Đọc kết quả"
-            >
-              🔊
+            {/* Chức năng 3: Ghi âm */}
+            <button onClick={startRecording} className="flex flex-col items-center p-4 bg-white rounded-xl shadow">
+              <span className="text-2xl">🎤</span>
+              <span className="text-[10px] font-bold">GIỌNG NÓI</span>
             </button>
-            
-            <div className="mt-8 text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
-              {loading ? (
-                <div className="flex flex-col items-center justify-center pt-20 space-y-4">
-                  <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="font-bold text-slate-400 animate-pulse">AI ĐANG SUY NGHĨ...</p>
-                </div>
-              ) : (
-                response || "Đang đợi dữ liệu từ AI..."
-              )}
-            </div>
           </div>
-          
-          <p className="text-[10px] text-center text-slate-400 font-medium">
-            Phản hồi bởi Gemini AI. Kết quả chỉ mang tính chất tham khảo.
-          </p>
+
+          {/* Hiển thị nội dung đã thu âm hoặc ảnh đã chọn */}
+          {transcript && <div className="p-3 bg-blue-50 rounded-lg text-sm italic">" {transcript} "</div>}
+
+          <button onClick={handleSendRequest} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold">
+             GỬI ĐỀ NGAY
+          </button>
         </div>
       )}
+      {/* ... (Các phần Step 1 và Step 3 giữ nguyên) */}
     </main>
   );
 }
 
 
+// 1. Khi chọn ảnh từ Camera hoặc File
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        setImage(reader.result as string);
+        setShowCropper(true); // Hiện khung cắt ngay
+      });
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  // 2. Lưu vị trí cắt
+  const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  // 3. Hàm tạo ảnh đã cắt (từ Canvas)
+  const generateCroppedImage = async () => {
+    try {
+      const canvas = document.createElement("canvas");
+      const img = new Image();
+      img.src = image!;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const ctx = canvas.getContext("2d");
+      canvas.width = croppedAreaPixels!.width;
+      canvas.height = croppedAreaPixels!.height;
+
+      ctx?.drawImage(
+        img,
+        croppedAreaPixels!.x, croppedAreaPixels!.y,
+        croppedAreaPixels!.width, croppedAreaPixels!.height,
+        0, 0,
+        croppedAreaPixels!.width, croppedAreaPixels!.height
+      );
+
+      const base64Image = canvas.toDataURL("image/jpeg");
+      setFinalImage(base64Image); // Đây là ảnh "sạch" chỉ chứa vùng đã cắt
+      setShowCropper(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <main className="max-w-md mx-auto min-h-screen bg-slate-50 p-6 relative">
+      {/* GIAO DIỆN CROP (Hiện đè lên màn hình) */}
+      {showCropper && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <div className="relative flex-1">
+            <Cropper
+              image={image!}
+              crop={crop}
+              zoom={zoom}
+              aspect={4 / 3} // Bạn có thể chỉnh tỉ lệ hoặc bỏ để tự do
+              onCropChange={setCrop}
+              onCropComplete={onCropComplete}
+              onZoomChange={setZoom}
+            />
+          </div>
+          <div className="p-6 bg-slate-900 flex justify-between">
+            <button onClick={() => setShowCropper(false)} className="text-white">Hủy</button>
+            <button onClick={generateCroppedImage} className="bg-indigo-600 px-6 py-2 rounded-lg text-white font-bold">
+              XÁC NHẬN CẮT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* GIAO DIỆN CHÍNH */}
+      <h1 className="text-2xl font-black text-center mb-10">GIẢI ĐỀ THÔNG MINH</h1>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <label className="flex flex-col items-center p-6 bg-white rounded-3xl shadow-lg cursor-pointer border-2 border-transparent active:border-indigo-500">
+           <span className="text-4xl mb-2">📸</span>
+           <span className="font-bold text-slate-600">CHỤP ĐỀ</span>
+           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onFileChange} />
+        </label>
+        
+        {/* Các nút khác giữ nguyên... */}
+      </div>
+
+      {/* Hiển thị ảnh sau khi đã cắt */}
+      {finalImage && (
+        <div className="mt-6">
+          <p className="text-sm font-bold text-slate-400 mb-2 uppercase">Ảnh đã chọn:</p>
+          <img src={finalImage} className="rounded-2xl border-4 border-white shadow-lg w-full" />
+          <button className="w-full mt-4 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-xl">
+            GỬI CHO GEMINI GIẢI
+          </button>
+        </div>
+      )}
+    </main>
+  );
+}
