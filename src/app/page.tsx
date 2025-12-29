@@ -1,5 +1,5 @@
-import "./globals.css";
 "use client";
+import "./globals.css";
 
 import { useState } from "react";
 
@@ -188,4 +188,5 @@ export default function StudyApp() {
     </main>
   );
 }
+
 
