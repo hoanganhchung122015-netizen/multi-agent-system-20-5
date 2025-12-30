@@ -1,3 +1,5 @@
+export const runtime = 'edge'; // Thêm dòng này vào dòng số 1
+// Giữ nguyên phần code API Gemini của bạn bên dưới...
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
@@ -39,3 +41,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ text: "Lỗi kết nối AI" }, { status: 500 });
   }
 }
+
