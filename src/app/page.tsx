@@ -1,5 +1,7 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+
+import "./globals.css";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Cropper from "react-easy-crop";
 
 export default function StudyApp() {
@@ -12,185 +14,227 @@ export default function StudyApp() {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [showCropper, setShowCropper] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [aiData, setAiData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState(1);
-  const [userChoice, setUserChoice] = useState<number | null>(null);
-  const [showEssayAns, setShowEssayAns] = useState(false);
-  const [showCelebration, setShowCelebration] = useState(false);
+  const [aiResponse, setAiResponse] = useState("");
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [transcript, setTranscript] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Hàm bóc tách JSON an toàn
-  const extractJSON = (text: string) => {
-    try {
-      const start = text.indexOf('{');
-      const end = text.lastIndexOf('}');
-      if (start === -1 || end === -1) return null;
-      return JSON.parse(text.substring(start, end + 1));
-    } catch (e) { return null; }
+  // --- XỬ LÝ CAMERA & ĐẾM NGƯỢC ---
+  const startCameraWithTimer = () => {
+    // Xin quyền camera trước khi đếm ngược để tránh bị chặn
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(() => setCountdown(10))
+      .catch(() => alert("Vui lòng cho phép quyền truy cập Camera trong cài đặt trình duyệt!"));
   };
 
-  const sendToAI = async () => {
-    setLoading(true); setStep(3); setActiveTab(1); setUserChoice(null); setShowEssayAns(false);
-    try {
-      const base64 = croppedImage ? croppedImage.split(",")[1] : null;
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: `Giải bài tập môn ${subject}`, image: base64, subject }),
-      });
-      const data = await res.json();
-      const parsed = extractJSON(data.text);
-      if (parsed) setAiData(parsed);
-      else throw new Error("Format error");
-    } catch (e) {
-      setAiData({ dap_an: "⚠️ Thử lại", giai_thich: "AI không phân tích được ảnh. Hãy chụp gần và rõ nét hơn!", trac_nghiem: { cau_hoi: "", lua_chon: [], index_dung: 0 }, tu_luan: { cau_hoi: "", dap_an: "" } });
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else {
+      setCountdown(null);
+      // Kích hoạt input camera
+      if (cameraInputRef.current) {
+        cameraInputRef.current.click();
+      }
     }
-    setLoading(false);
-  };
+  }, [countdown]);
 
-  const handleChoice = (idx: number) => {
-    setUserChoice(idx);
-    if (idx === aiData.trac_nghiem.index_dung) {
-      setShowCelebration(true);
-      setTimeout(() => setShowCelebration(false), 2000);
+  // --- XỬ LÝ GHI ÂM (MICRO) ---
+  const handleVoiceInput = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Trình duyệt không hỗ trợ nhận diện giọng nói.");
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = "vi-VN";
+      recognition.continuous = false;
+      
+      recognition.onstart = () => setIsRecording(true);
+      recognition.onend = () => setIsRecording(false);
+      
+      recognition.onresult = (event: any) => {
+        const text = event.results[0][0].transcript;
+        setTranscript(text);
+      };
+
+      recognition.start();
+    } catch (err) {
+      alert("Vui lòng cho phép quyền truy cập Micro!");
     }
   };
 
-  const onFileChange = (e: any, isCam: boolean) => {
-    if (e.target.files?.[0]) {
+  // --- XỬ LÝ ẢNH & CROP ---
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>, isCamera: boolean) => {
+    if (e.target.files && e.target.files.length > 0) {
       const reader = new FileReader();
       reader.readAsDataURL(e.target.files[0]);
       reader.onload = () => {
-        if (isCam) { setImage(reader.result as string); setShowCropper(true); }
-        else setCroppedImage(reader.result as string);
+        const result = reader.result as string;
+        if (isCamera) {
+          setImage(result);
+          setShowCropper(true);
+        } else {
+          setCroppedImage(result); // Tải lên dùng luôn không cần crop
+        }
       };
     }
   };
 
+  const onCropComplete = useCallback((_area: any, pixels: any) => setCroppedAreaPixels(pixels), []);
+
+  const confirmCrop = async () => {
+    if (!image || !croppedAreaPixels) return;
+    const canvas = document.createElement("canvas");
+    const img = new Image();
+    img.src = image;
+    await new Promise((resolve) => (img.onload = resolve));
+    const ctx = canvas.getContext("2d");
+    const { width, height, x, y } = croppedAreaPixels as any;
+    canvas.width = width;
+    canvas.height = height;
+    ctx?.drawImage(img, x, y, width, height, 0, 0, width, height);
+    setCroppedImage(canvas.toDataURL("image/jpeg"));
+    setShowCropper(false);
+  };
+
+  // --- GỬI ĐỀ CHO AI ---
+  const sendToAI = async () => {
+    setLoading(true);
+    setStep(3);
+    try {
+      const base64Data = croppedImage ? croppedImage.split(",")[1] : null;
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: transcript || `Hãy giải chi tiết bài tập ${subject} này bằng tiếng Việt.`,
+          image: base64Data,
+          subject: subject
+        }),
+      });
+      const data = await res.json();
+      setAiResponse(data.text || "AI không trả về lời giải. Hãy kiểm tra lại ảnh hoặc Key.");
+    } catch (error) {
+      setAiResponse("Lỗi kết nối. Vui lòng kiểm tra API Key trên Vercel.");
+    }
+    setLoading(false);
+  };
+
   return (
-    <main className="flex justify-center min-h-screen bg-slate-100">
-      <div className="w-full max-w-md bg-white shadow-2xl flex flex-col min-h-screen relative overflow-hidden">
+    <main className="flex justify-center min-h-screen bg-slate-100 font-sans">
+      <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative overflow-hidden flex flex-col">
         
-        {/* HIỆU ỨNG PHÁO HOA CSS THUẦN */}
-        {showCelebration && (
-          <div className="absolute inset-0 z-[110] pointer-events-none flex items-center justify-center">
-             <div className="text-6xl animate-bounce">🎉✨🎊</div>
-             <style jsx>{`
-               @keyframes celebrate {
-                 0% { transform: scale(0); opacity: 0; }
-                 50% { opacity: 1; }
-                 100% { transform: scale(2); opacity: 0; }
-               }
-             `}</style>
+        {/* LỚP PHỦ ĐẾM NGƯỢC */}
+        {countdown !== null && (
+          <div className="fixed inset-0 z-[100] bg-indigo-600/95 flex flex-col items-center justify-center text-white">
+            <div className="text-9xl font-black mb-4 animate-bounce">{countdown}</div>
+            <p className="text-xl font-bold uppercase tracking-widest">Chuẩn bị chụp đề...</p>
           </div>
         )}
 
-        {/* MODAL CROP */}
+        {/* MODAL CROP GOOGLE LENS */}
         {showCropper && (
-          <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-            <div className="relative flex-1"><Cropper image={image!} crop={crop} zoom={zoom} onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_, p) => setCroppedAreaPixels(p)} /></div>
-            <button onClick={async () => {
-              const canvas = document.createElement("canvas");
-              const img = new Image(); img.src = image!;
-              await new Promise(r => img.onload = r);
-              const { width, height, x, y } = croppedAreaPixels as any;
-              canvas.width = width; canvas.height = height;
-              canvas.getContext("2d")?.drawImage(img, x, y, width, height, 0, 0, width, height);
-              setCroppedImage(canvas.toDataURL("image/jpeg")); setShowCropper(false);
-            }} className="m-6 bg-yellow-400 p-5 rounded-3xl font-black text-black shadow-lg uppercase">Cắt ảnh này</button>
+          <div className="fixed inset-0 z-[90] bg-black flex flex-col">
+            <div className="relative flex-1">
+              <Cropper image={image!} crop={crop} zoom={zoom} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} />
+            </div>
+            <div className="p-6 bg-slate-900 flex justify-between items-center">
+              <button onClick={() => setShowCropper(false)} className="text-white font-medium">Hủy</button>
+              <button onClick={confirmCrop} className="bg-yellow-400 px-10 py-3 rounded-full font-black text-black shadow-lg">XÁC NHẬN VÙNG CHỌN</button>
+            </div>
           </div>
         )}
 
-        {/* TRANG CHỦ */}
+        {/* STEP 1: HOME */}
         {step === 1 && (
           <div className="p-6">
-            <div className="bg-indigo-600 p-10 rounded-[45px] text-white mb-10 shadow-2xl text-center">
-              <h1 className="text-3xl font-black italic">GIA SƯ AI 24/7</h1>
-              <p className="opacity-70 text-sm mt-2 font-bold uppercase tracking-widest">Học tập thông minh</p>
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-8 text-white mb-8 shadow-xl">
+              <h1 className="text-3xl font-black italic mb-1">MULTI-AGEN-SYSTEM 20.5</h1>
+              <p className="opacity-80 text-sm">Gia sư AI hoàn hảo của mọi thế hệ học sinh</p>
             </div>
-            <div className="grid grid-cols-2 gap-5">
-              <button onClick={() => {setSubject("TOÁN"); setStep(2)}} className="h-44 bg-rose-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">TOÁN</button>
-              <button onClick={() => {setSubject("LÝ"); setStep(2)}} className="h-44 bg-blue-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">LÝ</button>
-              <button onClick={() => {setSubject("HÓA"); setStep(2)}} className="h-44 bg-emerald-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">HÓA</button>
-              <button onClick={() => {setSubject("NHẬT KÝ"); setStep(2)}} className="h-44 bg-amber-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">NHẬT KÝ</button>
+            <div className="grid grid-cols-2 gap-4">
+              <button onClick={() => { setSubject("TOÁN"); setStep(2); }} className="h-40 bg-rose-500 text-white font-bold rounded-3xl shadow-lg text-xl active:scale-95 transition-all">TOÁN</button>
+              <button onClick={() => { setSubject("LÝ"); setStep(2); }} className="h-40 bg-blue-500 text-white font-bold rounded-3xl shadow-lg text-xl active:scale-95 transition-all">LÝ</button>
+              <button onClick={() => { setSubject("HÓA"); setStep(2); }} className="h-40 bg-emerald-500 text-white font-bold rounded-3xl shadow-lg text-xl active:scale-95 transition-all">HÓA</button>
+              <button onClick={() => { setSubject("NHẬT KÝ"); setStep(2); }} className="h-40 bg-amber-500 text-white font-bold rounded-3xl shadow-lg text-xl active:scale-95 transition-all">NHẬT KÝ</button>
             </div>
           </div>
         )}
 
-        {/* NHẬP ĐỀ */}
+        {/* STEP 2: INPUT */}
         {step === 2 && (
           <div className="p-6 flex flex-col flex-1">
-            <button onClick={() => setStep(1)} className="text-slate-400 font-bold mb-6 text-xs uppercase tracking-tighter">← Quay về</button>
-            <h2 className="text-4xl font-black mb-10 text-slate-800 uppercase tracking-tighter">Môn {subject}</h2>
-            <div className="flex gap-4 mb-8">
-              <button onClick={() => cameraInputRef.current?.click()} className="flex-1 p-8 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[35px] text-4xl shadow-inner active:bg-indigo-50">📸<input ref={cameraInputRef} type="file" capture="environment" className="hidden" onChange={e => onFileChange(e, true)} /></button>
-              <label className="flex-1 p-8 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[35px] text-4xl text-center shadow-inner cursor-pointer active:bg-indigo-50">📁<input type="file" className="hidden" onChange={e => onFileChange(e, false)} /></label>
+            <button onClick={() => {setStep(1); setCroppedImage(null); setTranscript("");}} className="text-slate-400 font-bold mb-4 flex items-center">
+              <span className="mr-2 text-xl">←</span> QUAY LẠI
+            </button>
+            <h2 className="text-3xl font-black mb-8 text-slate-800">MÔN {subject}</h2>
+            
+            <div className="grid grid-cols-3 gap-3 mb-8">
+              <button onClick={startCameraWithTimer} className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 active:bg-indigo-50 active:border-indigo-200">
+                <span className="text-3xl mb-1">📸</span>
+                <span className="text-[10px] font-black uppercase">Chụp ảnh</span>
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onFileChange(e, true)} />
+              </button>
+
+              <label className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 cursor-pointer active:bg-indigo-50">
+                <span className="text-3xl mb-1">📁</span>
+                <span className="text-[10px] font-black uppercase">Tải lên</span>
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => onFileChange(e, false)} />
+              </label>
+
+              <button onClick={handleVoiceInput} className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse border-red-600' : 'bg-slate-50 border-slate-100'}`}>
+                <span className="text-3xl mb-1">{isRecording ? "⏹️" : "🎤"}</span>
+                <span className="text-[10px] font-black uppercase">{isRecording ? "Đang nghe" : "Giọng nói"}</span>
+              </button>
             </div>
-            {croppedImage && <img src={croppedImage} className="w-full rounded-[35px] shadow-2xl border-8 border-white mb-6" />}
-            <button onClick={sendToAI} disabled={!croppedImage} className="mt-auto bg-indigo-600 text-white py-6 rounded-[35px] font-black uppercase text-lg shadow-2xl disabled:bg-slate-200">Giải đề ngay 🚀</button>
+
+            <div className="flex-1 space-y-4 overflow-y-auto">
+              {transcript && (
+                <div className="p-4 bg-indigo-50 border-l-4 border-indigo-500 text-indigo-700 rounded-r-xl text-sm font-medium italic">
+                  “{transcript}”
+                </div>
+              )}
+              {croppedImage && (
+                <div className="relative">
+                  <img src={croppedImage} className="w-full rounded-2xl border-4 border-white shadow-xl" />
+                  <button onClick={() => setCroppedImage(null)} className="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full shadow-lg">×</button>
+                </div>
+              )}
+            </div>
+
+            <button onClick={sendToAI} disabled={!croppedImage && !transcript} className="mt-6 w-full bg-indigo-600 text-white py-5 rounded-3xl font-black shadow-2xl active:scale-95 transition-all disabled:bg-slate-200 disabled:shadow-none uppercase tracking-widest">
+              Gửi đề cho chuyên gia 🚀
+            </button>
           </div>
         )}
 
-        {/* KẾT QUẢ */}
+        {/* STEP 3: RESULT */}
         {step === 3 && (
-          <div className="flex flex-col flex-1">
-            <div className="p-5 flex justify-between items-center border-b">
-              <button onClick={() => setStep(2)} className="text-indigo-600 font-bold text-xs uppercase">Thử lại</button>
-              <span className="font-black text-slate-700 tracking-tighter">PHẢN HỒI AI</span>
-              <div className="w-10"></div>
-            </div>
-
+          <div className="p-6 flex flex-col flex-1">
+            <button onClick={() => setStep(2)} className="text-slate-400 font-bold mb-4 uppercase text-xs tracking-widest">← Thử lại</button>
+            <h2 className="text-2xl font-black mb-6 text-indigo-600 flex items-center">
+              ✨ LỜI GIẢI CHI TIẾT
+            </h2>
             {loading ? (
-              <div className="flex-1 flex flex-col items-center justify-center animate-pulse">
+              <div className="flex-1 flex flex-col items-center justify-center">
                 <div className="w-16 h-16 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-                <p className="font-black text-slate-400 uppercase text-[10px] tracking-widest">Đang tính toán...</p>
+                <p className="text-slate-400 font-bold animate-pulse uppercase tracking-widest">Gemini đang phân tích...</p>
               </div>
-            ) : aiData && (
-              <div className="flex flex-col flex-1">
-                <div className="flex bg-slate-100 p-1.5 m-5 rounded-2xl shadow-inner">
-                  {["ĐÁP ÁN", "GIẢI THÍCH", "LUYỆN TẬP"].map((t, i) => (
-                    <button key={i} onClick={() => setActiveTab(i+1)} className={`flex-1 py-3 rounded-xl font-black text-[10px] transition-all ${activeTab === i+1 ? 'bg-white text-indigo-600 shadow-md scale-105' : 'text-slate-400'}`}>{t}</button>
-                  ))}
-                </div>
-
-                <div className="flex-1 px-6 overflow-auto pb-10">
-                  {activeTab === 1 && (
-                    <div className="h-full flex flex-col items-center justify-center animate-in zoom-in-75">
-                      <div className="text-[10px] font-black text-slate-300 uppercase mb-4 tracking-widest">Kết quả đúng</div>
-                      <div className="text-5xl font-black text-indigo-600 bg-indigo-50 p-14 rounded-[50px] border-8 border-white shadow-2xl text-center min-w-[200px]">{aiData.dap_an}</div>
-                    </div>
-                  )}
-
-                  {activeTab === 2 && (
-                    <div className="space-y-4 animate-in fade-in">
-                      {aiData.giai_thich.split('\n').map((l: string, i: number) => (
-                        <div key={i} className="p-5 bg-slate-50 rounded-3xl border-l-8 border-indigo-500 font-bold text-slate-700 text-sm shadow-sm">{l}</div>
-                      ))}
-                    </div>
-                  )}
-
-                  {activeTab === 3 && (
-                    <div className="space-y-6 animate-in slide-in-from-right-10">
-                      <div className="bg-indigo-600 p-8 rounded-[40px] text-white shadow-2xl">
-                        <p className="font-black mb-6 text-lg">📝 {aiData.trac_nghiem.cau_hoi}</p>
-                        <div className="space-y-3">
-                          {aiData.trac_nghiem.lua_chon.map((o: string, i: number) => (
-                            <button key={i} onClick={() => handleChoice(i)} className={`w-full text-left p-4 rounded-2xl font-black text-xs transition-all ${userChoice === i ? (i === aiData.trac_nghiem.index_dung ? 'bg-emerald-400 border-2' : 'bg-rose-400') : 'bg-white/10 border border-white/5'}`}>{o}</button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="bg-amber-100 p-8 rounded-[40px] border-2 border-amber-200">
-                        <p className="font-black text-slate-800 mb-4 uppercase text-xs tracking-widest">✍️ Tự luận</p>
-                        <p className="font-bold text-slate-600 mb-6 italic">"{aiData.tu_luan.cau_hoi}"</p>
-                        {showEssayAns ? <p className="p-5 bg-white rounded-3xl text-sm font-black text-amber-600 border-4 border-amber-200 text-center uppercase animate-in fade-in">{aiData.tu_luan.dap_an}</p> : <button onClick={() => setShowEssayAns(true)} className="w-full bg-amber-500 text-white p-5 rounded-3xl font-black text-xs uppercase shadow-xl active:scale-95">Xem gợi ý giải</button>}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="p-6 bg-white border-t mt-auto">
-                  <button onClick={() => setStep(1)} className="w-full bg-slate-900 text-white py-5 rounded-[30px] font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Hoàn thành bài học</button>
-                </div>
+            ) : (
+              <div className="flex-1 bg-slate-50 p-6 rounded-3xl text-slate-700 leading-relaxed whitespace-pre-wrap shadow-inner border border-slate-200 overflow-y-auto max-h-[60vh]">
+                {aiResponse}
               </div>
+            )}
+            {!loading && (
+               <button onClick={() => setStep(1)} className="mt-6 w-full bg-slate-800 text-white py-4 rounded-2xl font-bold uppercase text-sm">Quay về trang chủ</button>
             )}
           </div>
         )}
@@ -198,3 +242,6 @@ export default function StudyApp() {
     </main>
   );
 }
+
+
+
