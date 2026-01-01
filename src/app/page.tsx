@@ -1,180 +1,200 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
+import Cropper from "react-easy-crop";
 
 export default function StudyApp() {
   const [step, setStep] = useState(1);
   const [subject, setSubject] = useState("");
+  const [image, setImage] = useState<string | null>(null);
+  const [croppedImage, setCroppedImage] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [showCropper, setShowCropper] = useState(false);
   const [loading, setLoading] = useState(false);
   const [aiData, setAiData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState(1);
-  
-  // State cho Camera & Đếm ngược
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [userChoice, setUserChoice] = useState<number | null>(null);
+  const [showEssayAns, setShowEssayAns] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Mở Camera và bắt đầu đếm ngược
-  const startCaptureProcess = async () => {
-    setIsCameraOpen(true);
-    setCapturedImage(null);
-    setCountdown(10); // Đếm ngược từ 10
-    
+  // Hàm bóc tách JSON an toàn
+  const extractJSON = (text: string) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment" }, 
-        audio: false 
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      alert("Không thể mở Camera. Vui lòng cấp quyền!");
-      setIsCameraOpen(false);
-      setCountdown(null);
-    }
-  };
-
-  // Xử lý đếm ngược
-  useEffect(() => {
-    if (countdown === null) return;
-    
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    } else {
-      takePhoto();
-    }
-  }, [countdown]);
-
-  // Hàm chụp ảnh
-  const takePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      const data = canvas.toDataURL("image/jpeg");
-      setCapturedImage(data);
-      
-      // Tắt camera sau khi chụp
-      const stream = video.srcObject as MediaStream;
-      stream?.getTracks().forEach(track => track.stop());
-      setIsCameraOpen(false);
-      setCountdown(null);
-    }
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start === -1 || end === -1) return null;
+      return JSON.parse(text.substring(start, end + 1));
+    } catch (e) { return null; }
   };
 
   const sendToAI = async () => {
-    if (!capturedImage) return;
-    setLoading(true); setStep(3); setActiveTab(1);
+    setLoading(true); setStep(3); setActiveTab(1); setUserChoice(null); setShowEssayAns(false);
     try {
+      const base64 = croppedImage ? croppedImage.split(",")[1] : null;
       const res = await fetch("/api/gemini", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          prompt: `Giải bài tập ${subject}`, 
-          image: capturedImage.split(",")[1], 
-          subject 
-        }),
+        body: JSON.stringify({ prompt: `Giải bài tập môn ${subject}`, image: base64, subject }),
       });
       const data = await res.json();
-      const cleanJson = data.text.replace(/```json/g, "").replace(/```/g, "").trim();
-      setAiData(JSON.parse(cleanJson));
+      const parsed = extractJSON(data.text);
+      if (parsed) setAiData(parsed);
+      else throw new Error("Format error");
     } catch (e) {
-      setAiData({ dap_an: "Lỗi", giai_thich: "Không thể đọc ảnh.", trac_nghiem: null, tu_luan: null });
+      setAiData({ dap_an: "⚠️ Thử lại", giai_thich: "AI không phân tích được ảnh. Hãy chụp gần và rõ nét hơn!", trac_nghiem: { cau_hoi: "", lua_chon: [], index_dung: 0 }, tu_luan: { cau_hoi: "", dap_an: "" } });
     }
     setLoading(false);
   };
 
+  const handleChoice = (idx: number) => {
+    setUserChoice(idx);
+    if (idx === aiData.trac_nghiem.index_dung) {
+      setShowCelebration(true);
+      setTimeout(() => setShowCelebration(false), 2000);
+    }
+  };
+
+  const onFileChange = (e: any, isCam: boolean) => {
+    if (e.target.files?.[0]) {
+      const reader = new FileReader();
+      reader.readAsDataURL(e.target.files[0]);
+      reader.onload = () => {
+        if (isCam) { setImage(reader.result as string); setShowCropper(true); }
+        else setCroppedImage(reader.result as string);
+      };
+    }
+  };
+
   return (
-    <main className="flex justify-center min-h-screen bg-slate-100 font-sans">
+    <main className="flex justify-center min-h-screen bg-slate-100">
       <div className="w-full max-w-md bg-white shadow-2xl flex flex-col min-h-screen relative overflow-hidden">
         
-        {/* LỚP PHỦ CAMERA & ĐẾM NGƯỢC */}
-        {isCameraOpen && (
-          <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center">
-            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-white text-9xl font-black animate-ping">{countdown}</div>
-            </div>
-            <div className="absolute bottom-10 text-white font-bold uppercase tracking-widest bg-black/50 px-6 py-2 rounded-full">
-              Giữ chắc máy, tự động chụp sau {countdown}s
-            </div>
+        {/* HIỆU ỨNG PHÁO HOA CSS THUẦN */}
+        {showCelebration && (
+          <div className="absolute inset-0 z-[110] pointer-events-none flex items-center justify-center">
+             <div className="text-6xl animate-bounce">🎉✨🎊</div>
+             <style jsx>{`
+               @keyframes celebrate {
+                 0% { transform: scale(0); opacity: 0; }
+                 50% { opacity: 1; }
+                 100% { transform: scale(2); opacity: 0; }
+               }
+             `}</style>
           </div>
         )}
-        <canvas ref={canvasRef} className="hidden" />
 
-        {/* STEP 1: CHỌN MÔN */}
+        {/* MODAL CROP */}
+        {showCropper && (
+          <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+            <div className="relative flex-1"><Cropper image={image!} crop={crop} zoom={zoom} onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_, p) => setCroppedAreaPixels(p)} /></div>
+            <button onClick={async () => {
+              const canvas = document.createElement("canvas");
+              const img = new Image(); img.src = image!;
+              await new Promise(r => img.onload = r);
+              const { width, height, x, y } = croppedAreaPixels as any;
+              canvas.width = width; canvas.height = height;
+              canvas.getContext("2d")?.drawImage(img, x, y, width, height, 0, 0, width, height);
+              setCroppedImage(canvas.toDataURL("image/jpeg")); setShowCropper(false);
+            }} className="m-6 bg-yellow-400 p-5 rounded-3xl font-black text-black shadow-lg uppercase">Cắt ảnh này</button>
+          </div>
+        )}
+
+        {/* TRANG CHỦ */}
         {step === 1 && (
           <div className="p-6">
-            <div className="bg-indigo-600 p-8 rounded-[40px] text-white mb-8 text-center shadow-xl">
-              <h1 className="text-3xl font-black italic">GIA SƯ AI 2.5</h1>
-              <p className="opacity-70 text-sm">Chụp ảnh - Đợi 10s - Có lời giải</p>
+            <div className="bg-indigo-600 p-10 rounded-[45px] text-white mb-10 shadow-2xl text-center">
+              <h1 className="text-3xl font-black italic">GIA SƯ AI 24/7</h1>
+              <p className="opacity-70 text-sm mt-2 font-bold uppercase tracking-widest">Học tập thông minh</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {["TOÁN", "LÝ", "HÓA", "NHẬT KÝ"].map((s, i) => (
-                <button key={i} onClick={() => {setSubject(s); setStep(2)}} className={`h-40 text-white font-black rounded-[35px] text-2xl shadow-lg active:scale-95 transition-all ${i===0?'bg-rose-500':i===1?'bg-blue-500':i===2?'bg-emerald-500':'bg-amber-500'}`}>{s}</button>
-              ))}
+            <div className="grid grid-cols-2 gap-5">
+              <button onClick={() => {setSubject("TOÁN"); setStep(2)}} className="h-44 bg-rose-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">TOÁN</button>
+              <button onClick={() => {setSubject("LÝ"); setStep(2)}} className="h-44 bg-blue-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">LÝ</button>
+              <button onClick={() => {setSubject("HÓA"); setStep(2)}} className="h-44 bg-emerald-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">HÓA</button>
+              <button onClick={() => {setSubject("NHẬT KÝ"); setStep(2)}} className="h-44 bg-amber-500 text-white font-black rounded-[40px] text-2xl shadow-xl active:scale-95 transition-all">NHẬT KÝ</button>
             </div>
           </div>
         )}
 
-        {/* STEP 2: CHỤP VÀ XÁC NHẬN */}
+        {/* NHẬP ĐỀ */}
         {step === 2 && (
           <div className="p-6 flex flex-col flex-1">
-            <button onClick={() => setStep(1)} className="text-slate-400 font-bold mb-4 uppercase text-xs">← Quay lại</button>
-            <h2 className="text-3xl font-black mb-8 text-slate-800">MÔN {subject}</h2>
-            
-            {!capturedImage ? (
-              <div className="flex-1 flex flex-col items-center justify-center border-4 border-dashed border-slate-200 rounded-[40px] bg-slate-50 p-10 text-center">
-                <button onClick={startCaptureProcess} className="w-32 h-32 bg-indigo-600 rounded-full flex items-center justify-center text-5xl shadow-2xl hover:scale-105 transition-all mb-6">📸</button>
-                <p className="font-black text-slate-400 uppercase text-xs tracking-widest">Bấm để bắt đầu đếm ngược 10s</p>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col">
-                <div className="relative group">
-                  <img src={capturedImage} className="w-full rounded-[40px] shadow-2xl border-8 border-white mb-6" />
-                  <button onClick={() => setCapturedImage(null)} className="absolute top-4 right-4 bg-red-500 text-white p-3 rounded-full font-bold shadow-lg">XÓA CHỤP LẠI</button>
-                </div>
-                <button onClick={sendToAI} className="mt-auto bg-indigo-600 text-white py-6 rounded-[35px] font-black uppercase text-lg shadow-2xl animate-bounce">Gửi cho chuyên gia 🚀</button>
-              </div>
-            )}
+            <button onClick={() => setStep(1)} className="text-slate-400 font-bold mb-6 text-xs uppercase tracking-tighter">← Quay về</button>
+            <h2 className="text-4xl font-black mb-10 text-slate-800 uppercase tracking-tighter">Môn {subject}</h2>
+            <div className="flex gap-4 mb-8">
+              <button onClick={() => cameraInputRef.current?.click()} className="flex-1 p-8 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[35px] text-4xl shadow-inner active:bg-indigo-50">📸<input ref={cameraInputRef} type="file" capture="environment" className="hidden" onChange={e => onFileChange(e, true)} /></button>
+              <label className="flex-1 p-8 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[35px] text-4xl text-center shadow-inner cursor-pointer active:bg-indigo-50">📁<input type="file" className="hidden" onChange={e => onFileChange(e, false)} /></label>
+            </div>
+            {croppedImage && <img src={croppedImage} className="w-full rounded-[35px] shadow-2xl border-8 border-white mb-6" />}
+            <button onClick={sendToAI} disabled={!croppedImage} className="mt-auto bg-indigo-600 text-white py-6 rounded-[35px] font-black uppercase text-lg shadow-2xl disabled:bg-slate-200">Giải đề ngay 🚀</button>
           </div>
         )}
 
-        {/* STEP 3: KẾT QUẢ 3 TAB (Giữ nguyên giao diện đẹp của bạn) */}
+        {/* KẾT QUẢ */}
         {step === 3 && (
-          <div className="flex flex-col flex-1 animate-in fade-in duration-500">
-            <div className="p-4 border-b flex justify-between items-center">
-              <button onClick={() => {setStep(2); setCapturedImage(null)}} className="text-indigo-600 font-bold text-xs">CHỤP LẠI</button>
-              <span className="font-black tracking-tighter text-slate-700">LỜI GIẢI CHI TIẾT</span>
+          <div className="flex flex-col flex-1">
+            <div className="p-5 flex justify-between items-center border-b">
+              <button onClick={() => setStep(2)} className="text-indigo-600 font-bold text-xs uppercase">Thử lại</button>
+              <span className="font-black text-slate-700 tracking-tighter">PHẢN HỒI AI</span>
               <div className="w-10"></div>
             </div>
 
             {loading ? (
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="font-bold text-slate-400 animate-pulse text-[10px]">AI ĐANG GIẢI BÀI...</p>
+              <div className="flex-1 flex flex-col items-center justify-center animate-pulse">
+                <div className="w-16 h-16 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin mb-6"></div>
+                <p className="font-black text-slate-400 uppercase text-[10px] tracking-widest">Đang tính toán...</p>
               </div>
             ) : aiData && (
-              <div className="flex flex-col flex-1 overflow-hidden">
-                <div className="flex bg-slate-100 p-1.5 m-4 rounded-2xl">
+              <div className="flex flex-col flex-1">
+                <div className="flex bg-slate-100 p-1.5 m-5 rounded-2xl shadow-inner">
                   {["ĐÁP ÁN", "GIẢI THÍCH", "LUYỆN TẬP"].map((t, i) => (
-                    <button key={i} onClick={() => setActiveTab(i+1)} className={`flex-1 py-3 rounded-xl font-black text-[10px] transition-all ${activeTab === i+1 ? 'bg-white text-indigo-600 shadow' : 'text-slate-400'}`}>{t}</button>
+                    <button key={i} onClick={() => setActiveTab(i+1)} className={`flex-1 py-3 rounded-xl font-black text-[10px] transition-all ${activeTab === i+1 ? 'bg-white text-indigo-600 shadow-md scale-105' : 'text-slate-400'}`}>{t}</button>
                   ))}
                 </div>
-                <div className="flex-1 px-6 overflow-y-auto pb-10">
+
+                <div className="flex-1 px-6 overflow-auto pb-10">
                   {activeTab === 1 && (
-                    <div className="h-full flex items-center justify-center">
-                      <div className="text-5xl font-black text-indigo-600 bg-indigo-50 p-14 rounded-[50px] border-8 border-white shadow-2xl text-center">{aiData.dap_an}</div>
+                    <div className="h-full flex flex-col items-center justify-center animate-in zoom-in-75">
+                      <div className="text-[10px] font-black text-slate-300 uppercase mb-4 tracking-widest">Kết quả đúng</div>
+                      <div className="text-5xl font-black text-indigo-600 bg-indigo-50 p-14 rounded-[50px] border-8 border-white shadow-2xl text-center min-w-[200px]">{aiData.dap_an}</div>
                     </div>
                   )}
+
                   {activeTab === 2 && (
-                    <div className="space-y-4">
-                      {aiData.giai_thich.split('\n').map
+                    <div className="space-y-4 animate-in fade-in">
+                      {aiData.giai_thich.split('\n').map((l: string, i: number) => (
+                        <div key={i} className="p-5 bg-slate-50 rounded-3xl border-l-8 border-indigo-500 font-bold text-slate-700 text-sm shadow-sm">{l}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  {activeTab === 3 && (
+                    <div className="space-y-6 animate-in slide-in-from-right-10">
+                      <div className="bg-indigo-600 p-8 rounded-[40px] text-white shadow-2xl">
+                        <p className="font-black mb-6 text-lg">📝 {aiData.trac_nghiem.cau_hoi}</p>
+                        <div className="space-y-3">
+                          {aiData.trac_nghiem.lua_chon.map((o: string, i: number) => (
+                            <button key={i} onClick={() => handleChoice(i)} className={`w-full text-left p-4 rounded-2xl font-black text-xs transition-all ${userChoice === i ? (i === aiData.trac_nghiem.index_dung ? 'bg-emerald-400 border-2' : 'bg-rose-400') : 'bg-white/10 border border-white/5'}`}>{o}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-amber-100 p-8 rounded-[40px] border-2 border-amber-200">
+                        <p className="font-black text-slate-800 mb-4 uppercase text-xs tracking-widest">✍️ Tự luận</p>
+                        <p className="font-bold text-slate-600 mb-6 italic">"{aiData.tu_luan.cau_hoi}"</p>
+                        {showEssayAns ? <p className="p-5 bg-white rounded-3xl text-sm font-black text-amber-600 border-4 border-amber-200 text-center uppercase animate-in fade-in">{aiData.tu_luan.dap_an}</p> : <button onClick={() => setShowEssayAns(true)} className="w-full bg-amber-500 text-white p-5 rounded-3xl font-black text-xs uppercase shadow-xl active:scale-95">Xem gợi ý giải</button>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="p-6 bg-white border-t mt-auto">
+                  <button onClick={() => setStep(1)} className="w-full bg-slate-900 text-white py-5 rounded-[30px] font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Hoàn thành bài học</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
